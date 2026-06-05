@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("BOT_TOKEN", "8724922311:AAHbErc51Ly8sJN9pYPxyRwy-aZwojC8Cj0")
 DATA_FILE = "data.json"
 
-# ── OWNER CONFIG ──────────────────────────────────────────────
 OWNER_ID = 5125916435
 UPI_ID = "unknown7387@axl"
-PREMIUM_DAYS = 5  # default 5 days
+PREMIUM_DAYS = 5
+FREE_LIMIT = 5
 
 REFERRAL_LINKS = {
     "1": {"name": "BDG WIN", "url": "https://bdgwin1.vip//#/register?invitationCode=8438396488"},
@@ -28,9 +28,24 @@ REFERRAL_LINKS = {
     "4": {"name": "Jai Club", "url": "https://www.jaiclub43.com/#/register?invitationCode=484122804377"},
 }
 
-FREE_LIMIT = 5
+LEVELS = [
+    (0, "🌱 Beginner"), (10, "⚡ Rising Star"), (25, "🔥 Pro Player"),
+    (50, "💎 Expert"), (100, "👑 Legend"), (200, "🚀 Master")
+]
 
-# ── N-GRAM PATTERNS ───────────────────────────────────────────
+BADGES = {
+    'first_pred': '🎯 First Prediction',
+    'streak_5': '🔥 5 Win Streak',
+    'streak_10': '💥 10 Win Streak',
+    'accuracy_70': '🎖️ 70% Accuracy',
+    'accuracy_80': '🏆 80% Accuracy',
+    'predictions_50': '⭐ 50 Predictions',
+    'predictions_100': '🌟 100 Predictions',
+    'referral_1': '👥 First Referral',
+    'referral_5': '👑 5 Referrals',
+    'premium_user': '💎 Premium Member',
+}
+
 NGRAM4 = {
     'BBB': {'B': 81, 'S': 19}, 'BBS': {'B': 31, 'S': 69},
     'BSB': {'B': 36, 'S': 64}, 'BSS': {'B': 39, 'S': 61},
@@ -56,7 +71,17 @@ HIST = [2,2,2,4,3,7,0,0,0,7,8,3,4,5,1,3,2,6,9,9,6,5,6,4,9,4,6,0,2,5,
         3,4,0,3,4,9,4,0,2,5,3,4,8,1,1,0,4,2,0,2,2,6,0,4,9,2,0,9,5,9,
         1,9,9,7,8,4,8,5,9,5,7,5,1,7,5,9,2,7,8,5,9,8,5,9,5,5,9,7,6,9]
 
-# ── HELPERS ───────────────────────────────────────────────────
+WELCOME_MESSAGES = [
+    "🔥 Kya baat hai {name} bhai! Tu aa gaya — ab game ka scene badlega! 🎯",
+    "💥 Aye {name}! Sahi jagah aaya hai — yahan AI teri madad karega jeetne mein! 🤖",
+    "🚀 Welcome {name}! Teri kismat badalne wali hai aaj! AI prediction ready hai! ⚡",
+    "🎮 Arrey {name} bhai! Tu bhi smart player hai — AI ke saath khelo aur jeeto! 💰",
+    "⚡ Hey {name}! Wingo ka asli secret formula yahan hai — prediction lo aur khelo! 🎯",
+    "🌟 {name} bhai aa gaye! Ab prediction bhi hogi aur jeet bhi — guaranteed AI power! 🔥",
+    "💎 Welcome {name}! Yeh bot sirf winners ke liye hai — aur tu winner lag raha hai! 🏆",
+    "🎯 Aye {name}! Sahi time pe aaya — AI abhi best form mein hai! Chalo khelein! 🚀",
+]
+
 def is_big(n): return n >= 5
 def get_col(n):
     if n in [0,5]: return 'violet'
@@ -88,21 +113,35 @@ def get_ud(data, uid):
             'results': [], 'acc': [], 'last_pred': None,
             'premium': False, 'premium_expiry': None,
             'free_used': 0, 'free_date': None,
-            'pending_payment': None
+            'pending_payment': None,
+            'points': 0, 'badges': [], 'level': 0,
+            'referral_code': None, 'referred_by': None, 'referrals': 0,
+            'win_streak': 0, 'max_streak': 0, 'total_preds': 0,
+            'banned': False, 'language': 'hi',
+            'daily_challenge_done': None, 'joined': datetime.now().isoformat()
         }
         save(data)
-    # migrate old users
     ud = data[uid]
-    for k,v in [('premium',False),('premium_expiry',None),
-                ('free_used',0),('free_date',None),('pending_payment',None)]:
+    defaults = {
+        'premium': False, 'premium_expiry': None,
+        'free_used': 0, 'free_date': None, 'pending_payment': None,
+        'points': 0, 'badges': [], 'level': 0,
+        'referral_code': None, 'referred_by': None, 'referrals': 0,
+        'win_streak': 0, 'max_streak': 0, 'total_preds': 0,
+        'banned': False, 'language': 'hi',
+        'daily_challenge_done': None, 'joined': datetime.now().isoformat()
+    }
+    for k, v in defaults.items():
         if k not in ud: ud[k] = v
+    # Generate referral code if missing
+    if not ud.get('referral_code'):
+        ud['referral_code'] = f"REF{uid[-6:]}"
     return ud
 
 def is_premium(ud, uid):
-    if str(uid) == str(OWNER_ID):
-        return True
-    if not ud.get('premium'):
-        return False
+    if str(uid) == str(OWNER_ID): return True
+    if ud.get('banned'): return False
+    if not ud.get('premium'): return False
     exp = ud.get('premium_expiry')
     if exp and datetime.now() > datetime.fromisoformat(exp):
         ud['premium'] = False
@@ -122,26 +161,61 @@ def use_free(ud):
 
 def free_remaining(ud):
     today = datetime.now().strftime('%Y-%m-%d')
-    if ud.get('free_date') != today:
-        return FREE_LIMIT
+    if ud.get('free_date') != today: return FREE_LIMIT
     return max(0, FREE_LIMIT - ud.get('free_used', 0))
 
-# ── PREDICTION ENGINE ─────────────────────────────────────────
+def get_level(points):
+    level_name = LEVELS[0][1]
+    for pts, name in LEVELS:
+        if points >= pts: level_name = name
+    return level_name
+
+def add_points(ud, pts):
+    ud['points'] = ud.get('points', 0) + pts
+
+def check_badges(ud):
+    new_badges = []
+    badges = ud.get('badges', [])
+    total = ud.get('total_preds', 0)
+    acc = ud.get('acc', [])
+    wins = sum(1 for a in acc if a.get('bs_ok'))
+    n = len(acc)
+    pct = round(wins/n*100) if n else 0
+
+    if total >= 1 and 'first_pred' not in badges:
+        badges.append('first_pred'); new_badges.append('first_pred')
+    if ud.get('win_streak', 0) >= 5 and 'streak_5' not in badges:
+        badges.append('streak_5'); new_badges.append('streak_5')
+    if ud.get('win_streak', 0) >= 10 and 'streak_10' not in badges:
+        badges.append('streak_10'); new_badges.append('streak_10')
+    if pct >= 70 and n >= 10 and 'accuracy_70' not in badges:
+        badges.append('accuracy_70'); new_badges.append('accuracy_70')
+    if pct >= 80 and n >= 10 and 'accuracy_80' not in badges:
+        badges.append('accuracy_80'); new_badges.append('accuracy_80')
+    if total >= 50 and 'predictions_50' not in badges:
+        badges.append('predictions_50'); new_badges.append('predictions_50')
+    if total >= 100 and 'predictions_100' not in badges:
+        badges.append('predictions_100'); new_badges.append('predictions_100')
+    if ud.get('referrals', 0) >= 1 and 'referral_1' not in badges:
+        badges.append('referral_1'); new_badges.append('referral_1')
+    if ud.get('referrals', 0) >= 5 and 'referral_5' not in badges:
+        badges.append('referral_5'); new_badges.append('referral_5')
+    if ud.get('premium') and 'premium_user' not in badges:
+        badges.append('premium_user'); new_badges.append('premium_user')
+    ud['badges'] = badges
+    return new_badges
+
 def predict(results, acc):
     all_r = results + [{'n':n} for n in HIST]
-    if len(all_r) < 5:
-        return None
+    if len(all_r) < 5: return None
     bs = ['B' if is_big(r['n']) else 'S' for r in all_r]
     cols = [col_key(r['n']) for r in all_r]
     k4 = ''.join(bs[:3]) if len(bs)>=3 else ''
     k3 = ''.join(bs[:2]) if len(bs)>=2 else ''
     k2 = bs[0]
-    if k4 in NGRAM4:
-        p = NGRAM4[k4]; src = f"4-gram[{k4}]"
-    elif k3 in NGRAM3:
-        p = NGRAM3[k3]; src = f"3-gram[{k3}]"
-    else:
-        p = NGRAM2.get(k2, {'B':50,'S':50}); src = f"2-gram[{k2}]"
+    if k4 in NGRAM4: p = NGRAM4[k4]; src = f"4-gram[{k4}]"
+    elif k3 in NGRAM3: p = NGRAM3[k3]; src = f"3-gram[{k3}]"
+    else: p = NGRAM2.get(k2, {'B':50,'S':50}); src = f"2-gram[{k2}]"
     bp, sp = p['B'], p['S']
     r5 = acc[:5]
     if len(r5) >= 3:
@@ -179,12 +253,25 @@ def predict(results, acc):
     for i in range(1,len(bs)):
         if bs[i]==bs[0]: sk+=1
         else: break
+    # Hot/Cold numbers
+    num_counts = Counter(r['n'] for r in all_r[:30])
+    hot = [str(x[0]) for x in num_counts.most_common(3)]
+    cold = [str(x[0]) for x in num_counts.most_common()[:-4:-1]]
+    # Risk meter
+    risk = 'LOW 🟢' if conf >= 30 else 'MEDIUM 🟡' if conf >= 15 else 'HIGH 🔴'
+    # Smart suggestion
+    if wait: suggest = "⏳ WAIT — Pattern unclear"
+    elif conf >= 30: suggest = "✅ STRONG signal — Khel sakte ho!"
+    elif conf >= 15: suggest = "⚠️ MEDIUM signal — Careful khelo"
+    else: suggest = "🛑 SKIP karo — Risky hai!"
     return {
         'bs':pred_bs,'bsc':round(bs_conf),
         'col':pcol,'cc':round(cc),
         'num':pn,'nc':round(nc2),
         'alts':alts,'src':src,'sk':sk,
-        'lt':bs[0],'wait':wait
+        'lt':bs[0],'wait':wait,
+        'hot':hot,'cold':cold,
+        'risk':risk,'suggest':suggest,'conf':conf
     }
 
 def fmt_pred(p, period=None, premium=False):
@@ -204,8 +291,12 @@ def fmt_pred(p, period=None, premium=False):
         t += f"🔢 *Alternates:* `{', '.join(map(str,p['alts']))}`\n"
         t += f"\n📊 Pattern: `{p['src']}`\n"
         t += f"🔥 Streak: `{p['sk']}× {p['lt']}`\n"
+        t += f"⚠️ Risk: {p['risk']}\n"
+        t += f"💡 {p['suggest']}\n"
+        t += f"🔴 Hot: `{', '.join(p['hot'])}` | 🔵 Cold: `{', '.join(p['cold'])}`\n"
     else:
         t += f"🔒 *COLOR, NUMBER & more* → Premium only\n"
+        t += f"⚠️ Risk: {p['risk']}\n"
     t += "\n━━━━━━━━━━━━━━━━━\n"
     t += "_Verify with: /result <number>_"
     return t
@@ -218,31 +309,35 @@ def premium_msg():
         "Aapki *5 free predictions* khatam ho gayi!\n\n"
         "💎 *PREMIUM FEATURES:*\n"
         "✅ Unlimited predictions\n"
-        "✅ Color prediction (🔴🟢🟣)\n"
+        "✅ Color prediction 🔴🟢🟣\n"
         "✅ Exact number prediction\n"
         "✅ Alternate numbers\n"
         "✅ Pattern analysis\n"
+        "✅ Risk meter LOW/MEDIUM/HIGH\n"
+        "✅ Smart suggestion (khelo ya ruko)\n"
+        "✅ Hot & Cold numbers\n"
         "✅ Accuracy report /accuracy\n"
-        "✅ Full history /history\n\n"
-        "💰 *PREMIUM LENE KE 2 TARIKE:*\n\n"
-        "1️⃣ *Game Deposit (FREE Premium):*\n"
-        "   Neeche se kisi ek game mein register karke ₹500+ deposit karo → Screenshot bhejo → *Lifetime Premium*\n\n"
-        "2️⃣ *Direct Payment (UPI):*\n"
-        f"   UPI: `{UPI_ID}`\n"
-        "   💰 *₹49* → 5 Days\n"
-        "   💰 *₹99* → 15 Days\n"
-        "   💰 *₹149* → Lifetime\n"
-        "   Payment screenshot bhejo\n\n"
+        "✅ Full history /history\n"
+        "✅ Profile & badges /profile\n"
+        "✅ Leaderboard /leaderboard\n\n"
+        "💰 *PLANS:*\n"
+        "🔹 *₹49* → 5 Days\n"
+        "🔹 *₹99* → 15 Days\n"
+        "🔹 *₹149* → Lifetime\n\n"
+        "🎮 *Game Deposit (FREE Lifetime):*\n"
+        "Register + ₹500 deposit → Screenshot bhejo\n\n"
+        f"💳 UPI: `{UPI_ID}`\n\n"
         "👇 *Apna option choose karo:*"
     )
 
 def get_premium_keyboard():
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎮 Game Register (FREE Premium)", callback_data="premium_game")],
-        [InlineKeyboardButton("💳 UPI ₹49 Pay Karo", callback_data="premium_upi")],
+        [InlineKeyboardButton("💳 UPI ₹49 - 5 Days", callback_data="premium_upi49"),
+         InlineKeyboardButton("💳 UPI ₹99 - 15 Days", callback_data="premium_upi99")],
+        [InlineKeyboardButton("💳 UPI ₹149 - Lifetime", callback_data="premium_upi149")],
         [InlineKeyboardButton("❓ Already paid? Screenshot bhejo", callback_data="premium_sent")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 def get_game_keyboard():
     keyboard = []
@@ -253,31 +348,287 @@ def get_game_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 # ── COMMANDS ──────────────────────────────────────────────────
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load()
     uid = update.effective_user.id
     ud = get_ud(data, uid)
     prem = is_premium(ud, uid)
+    name = update.effective_user.first_name or "Bhai"
+
+    # Referral handling
+    args = ctx.args
+    if args and args[0].startswith('REF') and not ud.get('referred_by'):
+        ref_code = args[0]
+        for rid, rud in data.items():
+            if rud.get('referral_code') == ref_code and rid != str(uid):
+                ud['referred_by'] = rid
+                rud['referrals'] = rud.get('referrals', 0) + 1
+                add_points(rud, 20)
+                new_b = check_badges(rud)
+                # Bonus free predictions for referrer
+                rud['free_used'] = max(0, rud.get('free_used', 0) - 2)
+                try:
+                    await ctx.bot.send_message(
+                        chat_id=int(rid),
+                        text=f"🎉 *Naya referral!*\n\n👤 {name} ne tera link use kiya!\n+20 points mile!\n+2 free predictions bonus! 🎁",
+                        parse_mode='Markdown'
+                    )
+                except: pass
+                break
+
+    save(data)
+    welcome = random.choice(WELCOME_MESSAGES).format(name=name)
     rem = free_remaining(ud)
-    status = "👑 *PREMIUM*" if prem else f"🆓 *FREE* ({rem}/{FREE_LIMIT} predictions left today)"
+    level = get_level(ud.get('points', 0))
+    status = "👑 *PREMIUM*" if prem else f"🆓 *FREE* ({rem}/{FREE_LIMIT} left today)"
+
     t = (
-        "🎮 *WINGO AI PREDICTOR*\n"
+        f"{welcome}\n\n"
+        "━━━━━━━━━━━━━━━━━\n"
+        "⚡ *WINGO AI PREDICTOR*\n"
         "━━━━━━━━━━━━━━━━━\n\n"
-        f"Status: {status}\n\n"
+        f"Status: {status}\n"
+        f"Level: {level}\n\n"
         "*COMMANDS:*\n"
         "➕ /add `<period> <number>`\n"
-        "    _e.g. /add 10644 7_\n\n"
         "✅ /result `<number>`\n"
-        "    _e.g. /result 7_\n\n"
-        "🎯 /predict — Get prediction\n"
-        "📊 /accuracy — Accuracy report _(Premium)_\n"
-        "📋 /history — Last 10 results _(Premium)_\n"
-        "💎 /premium — Upgrade to Premium\n"
-        "🗑 /clear — Clear my data\n\n"
+        "🎯 /predict — Prediction lo\n"
+        "📊 /accuracy — Accuracy _(Premium)_\n"
+        "📋 /history — History _(Premium)_\n"
+        "👤 /profile — Tera profile\n"
+        "🏆 /leaderboard — Top players\n"
+        "🎁 /refer — Referral link\n"
+        "🎟️ /coupon — Coupon use karo\n"
+        "💎 /premium — Upgrade karo\n"
+        "❓ /faq — Help & FAQ\n"
+        "🗑 /clear — Data clear\n\n"
         "━━━━━━━━━━━━━━━━━\n"
         "_Start: /add <period> <number>_"
     )
     await update.message.reply_text(t, parse_mode='Markdown')
+
+async def cmd_profile(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    data = load()
+    uid = update.effective_user.id
+    ud = get_ud(data, uid)
+    name = update.effective_user.first_name or "User"
+    prem = is_premium(ud, uid)
+    acc = ud.get('acc', [])
+    wins = sum(1 for a in acc if a.get('bs_ok'))
+    n = len(acc)
+    pct = round(wins/n*100) if n else 0
+    level = get_level(ud.get('points', 0))
+    badges = ud.get('badges', [])
+    badge_txt = ' '.join([BADGES.get(b,'') for b in badges]) if badges else 'None yet'
+    exp = ud.get('premium_expiry')
+    if prem and exp:
+        exp_str = datetime.fromisoformat(exp).strftime('%d %b %Y')
+        plan_txt = f"Premium till {exp_str}"
+    elif prem:
+        plan_txt = "Lifetime Premium 👑"
+    else:
+        plan_txt = f"Free ({free_remaining(ud)}/{FREE_LIMIT} left)"
+
+    t = (
+        f"━━━━━━━━━━━━━━━━━\n"
+        f"👤 *{name}'s PROFILE*\n"
+        f"━━━━━━━━━━━━━━━━━\n\n"
+        f"🏅 Level: {level}\n"
+        f"⭐ Points: {ud.get('points',0)}\n"
+        f"📊 Plan: {plan_txt}\n\n"
+        f"🎯 Total Predictions: {ud.get('total_preds',0)}\n"
+        f"✅ Win Rate: {pct}% ({wins}/{n})\n"
+        f"🔥 Best Streak: {ud.get('max_streak',0)}\n"
+        f"👥 Referrals: {ud.get('referrals',0)}\n\n"
+        f"🏆 *Badges:*\n{badge_txt}\n\n"
+        f"📅 Joined: {ud.get('joined','')[:10]}"
+    )
+    await update.message.reply_text(t, parse_mode='Markdown')
+
+async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    data = load()
+    scores = []
+    for uid, ud in data.items():
+        acc = ud.get('acc', [])
+        n = len(acc)
+        if n < 5: continue
+        wins = sum(1 for a in acc if a.get('bs_ok'))
+        pct = round(wins/n*100)
+        scores.append((uid, pct, wins, n, ud.get('total_preds',0)))
+    scores.sort(key=lambda x: (-x[1], -x[2]))
+    t = "🏆 *LEADERBOARD — TOP 10*\n━━━━━━━━━━━━━━━━━\n\n"
+    medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟']
+    for i, (uid, pct, wins, n, total) in enumerate(scores[:10]):
+        ud = data[uid]
+        name = f"User{uid[-4:]}"
+        t += f"{medals[i]} {name} — {pct}% ({wins}/{n})\n"
+    if not scores:
+        t += "_Abhi koi data nahi hai_"
+    await update.message.reply_text(t, parse_mode='Markdown')
+
+async def cmd_refer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    data = load()
+    uid = update.effective_user.id
+    ud = get_ud(data, uid)
+    save(data)
+    ref_code = ud.get('referral_code', f"REF{str(uid)[-6:]}")
+    bot_username = (await ctx.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start={ref_code}"
+    t = (
+        "🎁 *REFERRAL PROGRAM*\n"
+        "━━━━━━━━━━━━━━━━━\n\n"
+        f"Tera referral link:\n`{ref_link}`\n\n"
+        "📢 Dost ko bhejo — jab join kare:\n"
+        "✅ Tujhe +20 points mile\n"
+        "✅ Tujhe +2 free predictions bonus\n"
+        "✅ 5 referral pe special badge!\n\n"
+        f"👥 Abhi tak referrals: *{ud.get('referrals',0)}*"
+    )
+    await update.message.reply_text(t, parse_mode='Markdown')
+
+async def cmd_coupon(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    data = load()
+    uid = update.effective_user.id
+    ud = get_ud(data, uid)
+    args = ctx.args
+    if not args:
+        await update.message.reply_text(
+            "🎟️ *COUPON*\n\nFormat: `/coupon <CODE>`\nExample: `/coupon WELCOME50`",
+            parse_mode='Markdown')
+        return
+    code = args[0].upper()
+    coupons = data.get('__coupons__', {})
+    if code not in coupons:
+        await update.message.reply_text("❌ Invalid coupon code!", parse_mode='Markdown')
+        return
+    cp = coupons[code]
+    used_by = cp.get('used_by', [])
+    if str(uid) in used_by:
+        await update.message.reply_text("❌ Ye coupon already use kar chuke ho!", parse_mode='Markdown')
+        return
+    if cp.get('max_uses') and len(used_by) >= cp['max_uses']:
+        await update.message.reply_text("❌ Ye coupon expire ho gaya!", parse_mode='Markdown')
+        return
+    used_by.append(str(uid))
+    cp['used_by'] = used_by
+    reward = cp.get('reward', 'free5days')
+    if reward == 'free5days':
+        ud['premium'] = True
+        exp = datetime.now() + timedelta(days=5)
+        ud['premium_expiry'] = exp.isoformat()
+        msg = "🎉 *Coupon Applied!*\n\n✅ 5 Days Premium activated!"
+    elif reward == 'free15days':
+        ud['premium'] = True
+        exp = datetime.now() + timedelta(days=15)
+        ud['premium_expiry'] = exp.isoformat()
+        msg = "🎉 *Coupon Applied!*\n\n✅ 15 Days Premium activated!"
+    elif reward == 'points100':
+        add_points(ud, 100)
+        msg = "🎉 *Coupon Applied!*\n\n✅ +100 Points mile!"
+    else:
+        msg = "🎉 *Coupon Applied!*"
+    save(data)
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def cmd_faq(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    t = (
+        "❓ *FAQ & HELP*\n"
+        "━━━━━━━━━━━━━━━━━\n\n"
+        "🔹 *Bot kaise use karein?*\n"
+        "   /add 10644 7 — result add karo\n"
+        "   /predict — prediction lo\n"
+        "   /result 7 — verify karo\n\n"
+        "🔹 *Premium kaise milega?*\n"
+        "   /premium — options dekhо\n\n"
+        "🔹 *Free limit kya hai?*\n"
+        "   5 predictions/day free\n\n"
+        "🔹 *Referral kaise kaam karta hai?*\n"
+        "   /refer — link lo, share karo\n\n"
+        "🔹 *Coupon kahan se milega?*\n"
+        "   Owner se ya special events pe\n\n"
+        "🔹 *Data clear hoga kya?*\n"
+        "   /clear se sirf results clear hote hain, premium safe rahega\n\n"
+        "🔹 *Contact/Support?*\n"
+        "   Bot ke andar screenshot bhejo"
+    )
+    await update.message.reply_text(t, parse_mode='Markdown')
+
+async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+    args = ctx.args
+    if not args:
+        await update.message.reply_text("Usage: /broadcast <message>")
+        return
+    msg = ' '.join(args)
+    data = load()
+    sent = 0
+    failed = 0
+    for uid in data.keys():
+        if uid.startswith('__'): continue
+        try:
+            await ctx.bot.send_message(
+                chat_id=int(uid),
+                text=f"📢 *ANNOUNCEMENT*\n\n{msg}",
+                parse_mode='Markdown'
+            )
+            sent += 1
+        except:
+            failed += 1
+    await update.message.reply_text(f"✅ Broadcast done!\nSent: {sent} | Failed: {failed}")
+
+async def cmd_addcoupon(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+    args = ctx.args
+    if len(args) < 3:
+        await update.message.reply_text(
+            "Usage: /addcoupon <CODE> <reward> <max_uses>\n"
+            "Rewards: free5days, free15days, points100\n"
+            "Example: /addcoupon WELCOME50 free5days 100"
+        )
+        return
+    code = args[0].upper()
+    reward = args[1]
+    max_uses = int(args[2])
+    data = load()
+    if '__coupons__' not in data:
+        data['__coupons__'] = {}
+    data['__coupons__'][code] = {'reward': reward, 'max_uses': max_uses, 'used_by': []}
+    save(data)
+    await update.message.reply_text(f"✅ Coupon `{code}` created!\nReward: {reward} | Max uses: {max_uses}", parse_mode='Markdown')
+
+async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+    args = ctx.args
+    if not args:
+        await update.message.reply_text("Usage: /ban <user_id>")
+        return
+    target_id = str(args[0])
+    data = load()
+    ud = get_ud(data, target_id)
+    ud['banned'] = True
+    save(data)
+    try:
+        await ctx.bot.send_message(chat_id=int(target_id), text="⛔ Aapko bot se ban kar diya gaya hai.")
+    except: pass
+    await update.message.reply_text(f"⛔ User {target_id} banned!")
+
+async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+    args = ctx.args
+    if not args:
+        await update.message.reply_text("Usage: /unban <user_id>")
+        return
+    target_id = str(args[0])
+    data = load()
+    ud = get_ud(data, target_id)
+    ud['banned'] = False
+    save(data)
+    await update.message.reply_text(f"✅ User {target_id} unbanned!")
 
 async def cmd_premium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load()
@@ -292,66 +643,52 @@ async def cmd_premium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             msg = "👑 *Aap PREMIUM hain! (Lifetime)*\n\n/predict se prediction lo!"
         await update.message.reply_text(msg, parse_mode='Markdown')
         return
-    await update.message.reply_text(
-        premium_msg(), parse_mode='Markdown',
-        reply_markup=get_premium_keyboard()
-    )
+    await update.message.reply_text(premium_msg(), parse_mode='Markdown', reply_markup=get_premium_keyboard())
 
 async def callback_premium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
+    d = query.data
 
-    if data == "premium_game":
+    if d == "premium_game":
         txt = (
             "🎮 *GAME REGISTER KARKE FREE PREMIUM PAO!*\n\n"
-            "Steps:\n"
             "1️⃣ Neeche se kisi ek game choose karo\n"
-            "2️⃣ Link pe register karo\n"
+            "2️⃣ Register karo\n"
             "3️⃣ Minimum ₹500 deposit karo\n"
-            "4️⃣ Deposit screenshot bhejo is bot mein\n"
-            "5️⃣ Verify hone pe *Lifetime Premium* milega! 🎉\n\n"
-            "👇 *Game choose karo:*"
+            "4️⃣ Screenshot bhejo → *Lifetime Premium!* 🎉"
         )
         await query.edit_message_text(txt, parse_mode='Markdown', reply_markup=get_game_keyboard())
 
-    elif data == "premium_upi":
+    elif d in ["premium_upi49", "premium_upi99", "premium_upi149"]:
+        amt = {"premium_upi49":"₹49 (5 Days)","premium_upi99":"₹99 (15 Days)","premium_upi149":"₹149 (Lifetime)"}[d]
         txt = (
-            "💳 *UPI PAYMENT - PLANS*\n\n"
+            f"💳 *UPI PAYMENT — {amt}*\n\n"
             f"UPI ID: `{UPI_ID}`\n\n"
-            "📦 *PLANS:*\n"
-            "🔹 *₹49* → 5 Days\n"
-            "🔹 *₹99* → 15 Days\n"
-            "🔹 *₹149* → Lifetime (Unlimited)\n\n"
             "Steps:\n"
             "1️⃣ UPI ID copy karo\n"
-            "2️⃣ Apna plan choose karke pay karo\n"
-            "3️⃣ Payment screenshot is bot mein bhejo\n"
-            "4️⃣ Message mein likho kitne din ka plan liya\n"
-            "5️⃣ Thoda wait karo — verify hote hi access milega!\n\n"
+            f"2️⃣ {amt.split('(')[0].strip()} pay karo\n"
+            "3️⃣ Screenshot is bot mein bhejo\n"
+            "4️⃣ Verify hote hi access milega!\n\n"
             "⚠️ _Screenshot mein amount clearly dikhni chahiye_"
         )
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="premium_back")]])
         await query.edit_message_text(txt, parse_mode='Markdown', reply_markup=kb)
 
-    elif data == "premium_sent":
+    elif d == "premium_sent":
         txt = (
             "✅ *Screenshot bhejo!*\n\n"
             "Is bot mein directly screenshot bhejo.\n"
-            "Hamari team verify karegi aur aapko message aayega.\n\n"
-            "⏱ _Verification mein thoda time lag sakta hai_"
+            "Verify karke access diya jayega.\n\n"
+            "⏱ _Thoda time lag sakta hai_"
         )
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="premium_back")]])
         await query.edit_message_text(txt, parse_mode='Markdown', reply_markup=kb)
 
-    elif data == "premium_back":
-        await query.edit_message_text(
-            premium_msg(), parse_mode='Markdown',
-            reply_markup=get_premium_keyboard()
-        )
+    elif d == "premium_back":
+        await query.edit_message_text(premium_msg(), parse_mode='Markdown', reply_markup=get_premium_keyboard())
 
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """User screenshot bheje toh owner ko forward karo"""
     data = load()
     uid = update.effective_user.id
     user = update.effective_user
@@ -361,7 +698,6 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👑 Aap already Premium hain!", parse_mode='Markdown')
         return
 
-    # User ko message bhejo
     await update.message.reply_text(
         "📸 *Screenshot mil gaya!*\n\n"
         "⏳ Aapka UID verify ho raha hai, thoda time lag sakta hai.\n"
@@ -369,7 +705,6 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-    # Owner ko screenshot aur message bhejo
     try:
         msg = (
             f"🔔 *NEW PAYMENT REQUEST*\n\n"
@@ -384,27 +719,24 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             from_chat_id=update.message.chat_id,
             message_id=update.message.message_id
         )
-        await ctx.bot.send_message(
-            chat_id=5125916435,
-            text=msg,
-            parse_mode='Markdown'
-        )
+        await ctx.bot.send_message(chat_id=5125916435, text=msg, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Forward error: {e}")
 
 async def cmd_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Owner: /approve <user_id> [days]"""
-    if update.effective_user.id != OWNER_ID:
-        return
+    if update.effective_user.id != OWNER_ID: return
     args = ctx.args
     if not args:
-        await update.message.reply_text("Usage: /approve <user_id> [days]\nDefault 14 days (game deposit = 0 for lifetime)")
+        await update.message.reply_text("Usage: /approve <user_id> [days]\n0 = Lifetime")
         return
     target_id = str(args[0])
     days = int(args[1]) if len(args) > 1 else PREMIUM_DAYS
     data = load()
     ud = get_ud(data, target_id)
     ud['premium'] = True
+    ud['badges'] = ud.get('badges', [])
+    if 'premium_user' not in ud['badges']:
+        ud['badges'].append('premium_user')
     if days == 0:
         ud['premium_expiry'] = None
         exp_txt = "Lifetime"
@@ -413,15 +745,14 @@ async def cmd_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ud['premium_expiry'] = exp.isoformat()
         exp_txt = exp.strftime('%d %b %Y')
     save(data)
-    # Notify user
     try:
         await ctx.bot.send_message(
             chat_id=int(target_id),
             text=(
                 "🎉 *Congratulations! PREMIUM ACTIVATED!*\n\n"
-                f"✅ Aapka payment verify ho gaya!\n"
+                f"✅ Payment verify ho gaya!\n"
                 f"📅 Expiry: *{exp_txt}*\n\n"
-                "Ab aap unlimited predictions le sakte hain!\n"
+                "Ab unlimited predictions lo!\n"
                 "/predict se shuru karo 🚀"
             ),
             parse_mode='Markdown'
@@ -431,9 +762,7 @@ async def cmd_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ User {target_id} ko Premium diya! ({exp_txt})")
 
 async def cmd_reject(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Owner: /reject <user_id>"""
-    if update.effective_user.id != OWNER_ID:
-        return
+    if update.effective_user.id != OWNER_ID: return
     args = ctx.args
     if not args:
         await update.message.reply_text("Usage: /reject <user_id>")
@@ -444,37 +773,61 @@ async def cmd_reject(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             chat_id=int(target_id),
             text=(
                 "❌ *Payment Verify Nahi Hua*\n\n"
-                "Aapka screenshot verify nahi ho saka.\n\n"
-                "Possible reasons:\n"
+                "Screenshot verify nahi ho saka.\n\n"
+                "Reasons:\n"
                 "• Amount kam tha\n"
                 "• Screenshot clear nahi tha\n"
                 "• Wrong UPI ID pe payment\n\n"
-                "Dobara try karo ya /premium pe contact karo."
+                "Dobara try karo /premium"
             ),
             parse_mode='Markdown'
         )
     except Exception as e:
-        logger.error(f"Reject notify error: {e}")
+        logger.error(f"Reject error: {e}")
     await update.message.reply_text(f"❌ User {target_id} reject kiya.")
 
-async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Owner: /stats"""
-    if update.effective_user.id != OWNER_ID:
+async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID: return
+    args = ctx.args
+    if not args:
+        await update.message.reply_text("Usage: /cancel <user_id>")
         return
+    target_id = str(args[0])
     data = load()
-    total = len(data)
-    prem = sum(1 for uid, ud in data.items() if ud.get('premium'))
+    ud = get_ud(data, target_id)
+    ud['premium'] = False
+    ud['premium_expiry'] = None
+    save(data)
+    try:
+        await ctx.bot.send_message(
+            chat_id=int(target_id),
+            text="⚠️ *Aapka Premium Cancel Ho Gaya!*\n\nDobara lene ke liye /premium pe jao.",
+            parse_mode='Markdown'
+        )
+    except: pass
+    await update.message.reply_text(f"✅ User {target_id} ka premium cancel kiya!")
+
+async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID: return
+    data = load()
+    total = len([k for k in data.keys() if not k.startswith('__')])
+    prem = sum(1 for uid, ud in data.items() if not uid.startswith('__') and ud.get('premium'))
+    banned = sum(1 for uid, ud in data.items() if not uid.startswith('__') and ud.get('banned'))
     active_today = 0
     today = datetime.now().strftime('%Y-%m-%d')
     for uid, ud in data.items():
+        if uid.startswith('__'): continue
         if ud.get('free_date') == today and ud.get('free_used', 0) > 0:
             active_today += 1
+    coupons = data.get('__coupons__', {})
     await update.message.reply_text(
         f"📊 *BOT STATS*\n\n"
         f"👥 Total Users: {total}\n"
         f"👑 Premium Users: {prem}\n"
         f"🆓 Free Users: {total - prem}\n"
-        f"⚡ Active Today: {active_today}",
+        f"⚡ Active Today: {active_today}\n"
+        f"⛔ Banned: {banned}\n"
+        f"🎟️ Coupons: {len(coupons)}",
         parse_mode='Markdown'
     )
 
@@ -482,57 +835,58 @@ async def cmd_add(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load()
     uid = update.effective_user.id
     ud = get_ud(data, uid)
-    prem = is_premium(ud, uid)
 
+    if ud.get('banned'):
+        await update.message.reply_text("⛔ Aap ban hain.")
+        return
+
+    prem = is_premium(ud, uid)
     args = ctx.args
     if not args or len(args) < 2:
-        await update.message.reply_text(
-            "❌ Format: `/add <period> <number>`\nExample: `/add 10644 7`",
-            parse_mode='Markdown')
+        await update.message.reply_text("❌ Format: `/add <period> <number>`\nExample: `/add 10644 7`", parse_mode='Markdown')
         return
     try:
         period = args[0]
         n = int(args[1])
         if not 0 <= n <= 9: raise ValueError
     except:
-        await update.message.reply_text(
-            "❌ Number must be 0-9\nExample: `/add 10644 7`",
-            parse_mode='Markdown')
+        await update.message.reply_text("❌ Number must be 0-9", parse_mode='Markdown')
         return
 
-    # Free limit check
     if not prem:
         if not check_free_limit(ud):
             save(data)
-            await update.message.reply_text(
-                premium_msg(), parse_mode='Markdown',
-                reply_markup=get_premium_keyboard()
-            )
+            await update.message.reply_text(premium_msg(), parse_mode='Markdown', reply_markup=get_premium_keyboard())
             return
         use_free(ud)
 
     entry = {'n':n,'period':period,'bs':'BIG' if is_big(n) else 'SMALL','col':get_col(n)}
     ud['results'].insert(0, entry)
     if len(ud['results'])>500: ud['results'].pop()
+    ud['total_preds'] = ud.get('total_preds', 0) + 1
+    add_points(ud, 2)
+    new_badges = check_badges(ud)
     p = predict(ud['results'], ud['acc'])
     ud['last_pred'] = p
     save(data)
 
     ce = {'red':'🔴','green':'🟢','violet':'🟣'}
     be = '🔵' if is_big(n) else '🔴'
-    rem_txt = "" if prem else f"\n🆓 Free predictions left today: *{free_remaining(ud)}*"
+    rem_txt = "" if prem else f"\n🆓 Free left today: *{free_remaining(ud)}*"
     added = (f"✅ *Added!*\n"
-             f"Period: `{period}` | {be} `{n}` {('BIG' if is_big(n) else 'SMALL')} "
+             f"Period: `{period}` | {be} `{n}` {'BIG' if is_big(n) else 'SMALL'} "
              f"{ce.get(get_col(n),'⚪')} {get_col(n).upper()}\n"
-             f"Total: {len(ud['results'])} results{rem_txt}\n\n")
+             f"⭐ Points: {ud.get('points',0)} | {get_level(ud.get('points',0))}{rem_txt}\n\n")
     await update.message.reply_text(added + fmt_pred(p, period, prem), parse_mode='Markdown')
 
-    # Show upgrade prompt after last free prediction
+    if new_badges:
+        badge_txt = '\n'.join([f"🏅 {BADGES.get(b,'')}" for b in new_badges])
+        await update.message.reply_text(f"🎉 *New Badge Earned!*\n\n{badge_txt}", parse_mode='Markdown')
+
     if not prem and free_remaining(ud) == 0:
         await update.message.reply_text(
             "⚠️ *Aaj ki free predictions khatam!*\nKal dobara aao ya Premium lo 👇",
-            parse_mode='Markdown',
-            reply_markup=get_premium_keyboard()
+            parse_mode='Markdown', reply_markup=get_premium_keyboard()
         )
 
 async def cmd_result(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -543,9 +897,7 @@ async def cmd_result(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     args = ctx.args
     if not args:
-        await update.message.reply_text(
-            "❌ Format: `/result <number>`\nExample: `/result 7`",
-            parse_mode='Markdown')
+        await update.message.reply_text("❌ Format: `/result <number>`", parse_mode='Markdown')
         return
     try:
         actual = int(args[0])
@@ -570,16 +922,34 @@ async def cmd_result(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                'bs_ok':bs_ok,'col_ok':col_ok}
         ud['acc'].insert(0,log)
         if len(ud['acc'])>200: ud['acc'].pop()
+
+        # Streak tracking
+        if bs_ok:
+            ud['win_streak'] = ud.get('win_streak', 0) + 1
+            if ud['win_streak'] > ud.get('max_streak', 0):
+                ud['max_streak'] = ud['win_streak']
+            add_points(ud, 5)
+        else:
+            ud['win_streak'] = 0
+
+        new_badges = check_badges(ud)
         wins = sum(1 for a in ud['acc'] if a['bs_ok'])
         tot = len(ud['acc'])
         pct = round(wins/tot*100) if tot else 0
+        streak = ud.get('win_streak', 0)
+        streak_txt = f"🔥 Streak: {streak}" if streak > 1 else ""
+
         if bs_ok and col_ok:
             fb = "✅ *PERFECT! BIG/SMALL + Color correct!* 🎉"
         elif bs_ok:
             fb = f"✅ *BIG/SMALL correct!*\nColor: pred {p['col'].upper()} → got {abs_col.upper()}"
         else:
             fb = f"❌ *WRONG*\nPred: {p['bs']} {p['col'].upper()} → Got: {abs_bs} {abs_col.upper()}\nAI learning..."
-        txt = f"{fb}\n📊 Accuracy: *{pct}%* ({wins}/{tot})\n\n"
+        txt = f"{fb}\n📊 Accuracy: *{pct}%* ({wins}/{tot}) {streak_txt}\n\n"
+
+        if new_badges:
+            badge_txt = '\n'.join([f"🏅 {BADGES.get(b,'')}" for b in new_badges])
+            txt += f"🎉 *New Badge!* {badge_txt}\n\n"
 
     new_p = predict(ud['results'], ud['acc'])
     ud['last_pred'] = new_p
@@ -596,10 +966,7 @@ async def cmd_predict(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if not prem and not check_free_limit(ud):
         save(data)
-        await update.message.reply_text(
-            premium_msg(), parse_mode='Markdown',
-            reply_markup=get_premium_keyboard()
-        )
+        await update.message.reply_text(premium_msg(), parse_mode='Markdown', reply_markup=get_premium_keyboard())
         return
 
     if not prem:
@@ -616,16 +983,11 @@ async def cmd_accuracy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     ud = get_ud(data, uid)
     if not is_premium(ud, uid):
-        await update.message.reply_text(
-            "🔒 *Accuracy report Premium feature hai!*\n\n/premium se upgrade karo.",
-            parse_mode='Markdown', reply_markup=get_premium_keyboard()
-        )
+        await update.message.reply_text("🔒 *Accuracy report Premium feature hai!*\n\n/premium se upgrade karo.", parse_mode='Markdown', reply_markup=get_premium_keyboard())
         return
     acc = ud['acc']
     if not acc:
-        await update.message.reply_text(
-            "📊 No verified predictions yet.\nUse /result after each round.",
-            parse_mode='Markdown')
+        await update.message.reply_text("📊 No data yet. Use /result after each round.", parse_mode='Markdown')
         return
     wins = sum(1 for a in acc if a['bs_ok'])
     cw = sum(1 for a in acc if a['col_ok'])
@@ -636,7 +998,8 @@ async def cmd_accuracy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     t = (f"━━━━━━━━━━━━━━━━━\n📊 *ACCURACY REPORT*\n━━━━━━━━━━━━━━━━━\n\n"
          f"{em} *BIG/SMALL:* {pct}% ({wins}/{n})\n"
          f"🎨 *Color:* {cpct}% ({cw}/{n})\n"
-         f"✅ Hit: {wins} | ❌ Miss: {n-wins} | 📈 Total: {n}\n\n")
+         f"✅ Hit: {wins} | ❌ Miss: {n-wins} | 📈 Total: {n}\n"
+         f"🔥 Best Streak: {ud.get('max_streak',0)}\n\n")
     if n>=5:
         if pct>=70: s="✨ HIGH CONFIDENCE"
         elif pct>=58: s="📈 MOMENTUM MODE"
@@ -654,15 +1017,10 @@ async def cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     ud = get_ud(data, uid)
     if not is_premium(ud, uid):
-        await update.message.reply_text(
-            "🔒 *History Premium feature hai!*\n\n/premium se upgrade karo.",
-            parse_mode='Markdown', reply_markup=get_premium_keyboard()
-        )
+        await update.message.reply_text("🔒 *History Premium feature hai!*\n\n/premium se upgrade karo.", parse_mode='Markdown', reply_markup=get_premium_keyboard())
         return
     if not ud['results']:
-        await update.message.reply_text(
-            "No results yet.\nAdd with: `/add <period> <number>`",
-            parse_mode='Markdown')
+        await update.message.reply_text("No results yet.", parse_mode='Markdown')
         return
     ce = {'red':'🔴','green':'🟢','violet':'🟣'}
     t = "📋 *LAST 10 RESULTS*\n━━━━━━━━━━━━━━━━━\n"
@@ -678,11 +1036,22 @@ async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if uid in data:
         prem = data[uid].get('premium', False)
         exp = data[uid].get('premium_expiry', None)
-        data[uid] = {'results':[],'acc':[],'last_pred':None,
-                     'premium':prem,'premium_expiry':exp,
-                     'free_used':0,'free_date':None,'pending_payment':None}
+        pts = data[uid].get('points', 0)
+        badges = data[uid].get('badges', [])
+        ref_code = data[uid].get('referral_code')
+        referrals = data[uid].get('referrals', 0)
+        data[uid] = {
+            'results':[],'acc':[],'last_pred':None,
+            'premium':prem,'premium_expiry':exp,
+            'free_used':0,'free_date':None,'pending_payment':None,
+            'points':pts,'badges':badges,'level':0,
+            'referral_code':ref_code,'referred_by':None,'referrals':referrals,
+            'win_streak':0,'max_streak':0,'total_preds':0,
+            'banned':False,'language':'hi',
+            'daily_challenge_done':None,'joined':datetime.now().isoformat()
+        }
         save(data)
-    await update.message.reply_text("🗑 Data cleared!", parse_mode='Markdown')
+    await update.message.reply_text("🗑 Data cleared! (Premium & points safe hain)", parse_mode='Markdown')
 
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     txt = update.message.text.strip()
@@ -700,8 +1069,18 @@ def main():
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("premium", cmd_premium))
+    app.add_handler(CommandHandler("profile", cmd_profile))
+    app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
+    app.add_handler(CommandHandler("refer", cmd_refer))
+    app.add_handler(CommandHandler("coupon", cmd_coupon))
+    app.add_handler(CommandHandler("faq", cmd_faq))
     app.add_handler(CommandHandler("approve", cmd_approve))
     app.add_handler(CommandHandler("reject", cmd_reject))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("ban", cmd_ban))
+    app.add_handler(CommandHandler("unban", cmd_unban))
+    app.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    app.add_handler(CommandHandler("addcoupon", cmd_addcoupon))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("help", cmd_start))
     app.add_handler(CallbackQueryHandler(callback_premium, pattern="^premium_"))
