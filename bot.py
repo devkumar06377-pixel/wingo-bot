@@ -18,7 +18,7 @@ DATA_FILE = "data.json"
 # ── OWNER CONFIG ──────────────────────────────────────────────
 OWNER_ID = 5125916435
 UPI_ID = "unknown7387@axl"
-PREMIUM_DAYS = 14  # 2 weeks
+PREMIUM_DAYS = 5  # default 5 days
 
 REFERRAL_LINKS = {
     "1": {"name": "BDG WIN", "url": "https://bdgwin1.vip//#/register?invitationCode=8438396488"},
@@ -225,9 +225,11 @@ def premium_msg():
         "💰 *PREMIUM LENE KE 2 TARIKE:*\n\n"
         "1️⃣ *Game Deposit (FREE Premium):*\n"
         "   Neeche se kisi ek game mein register karke ₹500+ deposit karo → Screenshot bhejo → *Lifetime Premium*\n\n"
-        "2️⃣ *Direct Payment:*\n"
+        "2️⃣ *Direct Payment (UPI):*\n"
         f"   UPI: `{UPI_ID}`\n"
-        "   Amount: *₹49* (2 weeks)\n"
+        "   💰 *₹49* → 5 Days\n"
+        "   💰 *₹99* → 15 Days\n"
+        "   💰 *₹149* → Lifetime\n"
         "   Payment screenshot bhejo\n\n"
         "👇 *Apna option choose karo:*"
     )
@@ -314,16 +316,19 @@ async def callback_premium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data == "premium_upi":
         txt = (
-            "💳 *UPI PAYMENT*\n\n"
-            f"UPI ID: `{UPI_ID}`\n"
-            "Amount: *₹49*\n"
-            "Duration: *2 Weeks*\n\n"
+            "💳 *UPI PAYMENT - PLANS*\n\n"
+            f"UPI ID: `{UPI_ID}`\n\n"
+            "📦 *PLANS:*\n"
+            "🔹 *₹49* → 5 Days\n"
+            "🔹 *₹99* → 15 Days\n"
+            "🔹 *₹149* → Lifetime (Unlimited)\n\n"
             "Steps:\n"
             "1️⃣ UPI ID copy karo\n"
-            "2️⃣ ₹49 pay karo\n"
+            "2️⃣ Apna plan choose karke pay karo\n"
             "3️⃣ Payment screenshot is bot mein bhejo\n"
-            "4️⃣ Thoda wait karo — verify hote hi access milega!\n\n"
-            "⚠️ _Screenshot mein amount aur UPI ID clearly dikhni chahiye_"
+            "4️⃣ Message mein likho kitne din ka plan liya\n"
+            "5️⃣ Thoda wait karo — verify hote hi access milega!\n\n"
+            "⚠️ _Screenshot mein amount clearly dikhni chahiye_"
         )
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="premium_back")]])
         await query.edit_message_text(txt, parse_mode='Markdown', reply_markup=kb)
@@ -359,29 +364,28 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📸 *Screenshot mil gaya!*\n\n"
         "⏳ Aapka UID verify ho raha hai, thoda time lag sakta hai.\n"
-        "✅ Verify hone ke baad aapko access mil jayega!\n\n"
-        "_Hamare team se contact: screenshot review mein hai_",
+        "✅ Verify hone ke baad aapko access mil jayega!",
         parse_mode='Markdown'
     )
 
-    # Owner ko forward karo
+    # Owner ko screenshot aur message bhejo
     try:
-        caption = (
+        msg = (
             f"🔔 *NEW PAYMENT REQUEST*\n\n"
             f"👤 Name: {user.full_name}\n"
             f"🆔 User ID: `{uid}`\n"
             f"📛 Username: @{user.username or 'N/A'}\n\n"
-            f"To approve: `/approve {uid}`\n"
-            f"To reject: `/reject {uid}`"
+            f"✅ Approve: `/approve {uid}`\n"
+            f"❌ Reject: `/reject {uid}`"
         )
         await ctx.bot.forward_message(
-            chat_id=OWNER_ID,
+            chat_id=5125916435,
             from_chat_id=update.message.chat_id,
             message_id=update.message.message_id
         )
         await ctx.bot.send_message(
-            chat_id=OWNER_ID,
-            text=caption,
+            chat_id=5125916435,
+            text=msg,
             parse_mode='Markdown'
         )
     except Exception as e:
