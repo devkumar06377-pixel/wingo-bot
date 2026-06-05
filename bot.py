@@ -329,6 +329,7 @@ async def cmd_analysis(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Analysis failed: {str(e)}", parse_mode='Markdown')
 
+# ── HANDLERS (WITH ERROR DEBUGGING) ───────────────────────────
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load()
     uid = update.effective_user.id
@@ -346,7 +347,7 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             response = await session.send_message_async([prompt, image])
             await update.message.reply_text(f"📸 *Vision Analysis:*\n\n{response.text}", parse_mode='Markdown')
         except Exception as e:
-            await update.message.reply_text("❌ Image processing mein error aaya.", parse_mode='Markdown')
+            await update.message.reply_text(f"❌ Image processing error:\n`{str(e)}`", parse_mode='Markdown')
     else:
         await update.message.reply_text("📸 *Screenshot mil gaya!*\nPayment validation ke liye owner ke paas bhej diya gaya hai.", parse_mode='Markdown')
         await ctx.bot.forward_message(chat_id=OWNER_ID, from_chat_id=uid, message_id=update.message.message_id)
@@ -370,10 +371,11 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             response = await session.send_message_async(context + txt)
             await update.message.reply_text(response.text, parse_mode='Markdown')
         except Exception as e:
-            await update.message.reply_text("❌ AI is busy. Try again later.")
+            await update.message.reply_text(f"❌ AI connection error:\n`{str(e)}`", parse_mode='Markdown')
     else:
         await update.message.reply_text("💬 Live AI Chat premium feature hai. Aap manually number (0-9) enter kar sakte hain.", parse_mode='Markdown')
 
+# ── CORE COMMANDS ─────────────────────────────────────────────
 async def cmd_add(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load()
     uid = update.effective_user.id
