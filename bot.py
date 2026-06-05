@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import logging
 from datetime import datetime, timedelta
 from collections import Counter
@@ -89,6 +90,7 @@ def get_ud(data, uid):
             'free_used': 0, 'free_date': None,
             'pending_payment': None
         }
+        save(data)
     # migrate old users
     ud = data[uid]
     for k,v in [('premium',False),('premium_expiry',None),
@@ -255,7 +257,6 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load()
     uid = update.effective_user.id
     ud = get_ud(data, uid)
-    save(data)
     prem = is_premium(ud, uid)
     rem = free_remaining(ud)
     status = "👑 *PREMIUM*" if prem else f"🆓 *FREE* ({rem}/{FREE_LIMIT} predictions left today)"
