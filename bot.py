@@ -17,8 +17,8 @@ import google.generativeai as genai
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN = os.environ.get("BOT_TOKEN", "8724922311:AAHbErc51Ly8sJN9pYPxyRwy-aZwojC8Cj0")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6JY7SD4Vg0Zcm3zEfQq9qxp1di-wv3XvKACZNYl81MKrw")
+TOKEN = "8724922311"
+GEMINI_API_KEY = "AQ.Ab8RN6JY7SD4Vg0Zcm3zEfQq9qxp1di-wv3XvKACZNYl81MKrw"
 DATA_FILE = "data.json"
 
 OWNER_ID = 5125916435
