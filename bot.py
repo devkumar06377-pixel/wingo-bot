@@ -17,6 +17,7 @@ import google.generativeai as genai
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 🔑 Aapke Tokens (Railway variables ki zaroorat nahi)
 TOKEN = "8724922311:AAHbErc51Ly8sJN9pYPxyRwy-aZwojC8Cj0"
 GEMINI_API_KEY = "AQ.Ab8RN6JY7SD4Vg0Zcm3zEfQq9qxp1di-wv3XvKACZNYl81MKrw"
 DATA_FILE = "data.json"
@@ -58,8 +59,8 @@ WELCOME_MESSAGES = [
     "🚀 Welcome {name}! Teri kismat badalne wali hai aaj! AI prediction ready hai! ⚡",
 ]
 
-# ── GEMINI AI SETUP ───────────────────────────────────────────
-genai.configure(api_key=GEMINI_API_KEY)
+# ── GEMINI AI SETUP (YAHAN FIX ADD KIYA HAI) ───────────────────
+genai.configure(api_key=GEMINI_API_KEY, transport="rest")
 
 analyst_prompt = """
 Aap ek expert Wingo/Color Prediction Data Analyst aur friendly AI assistant hain.
